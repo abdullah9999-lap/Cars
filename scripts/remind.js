@@ -9,20 +9,21 @@ const days = d => d ? Math.round((Date.parse(d) - Date.parse(today)) / 864e5) : 
 const addMo = (d, m) => { const x = new Date(d); x.setUTCMonth(x.getUTCMonth() + m); return x.toISOString().slice(0, 10); };
 const N = n => Number(n || 0).toLocaleString('en-US');
 
+const K = x => String(x).replace(/[\/.\[\]*~`]/g, '_');
 function dueLines(c, within) {
-  const nm = `${c.make} ${c.model}`, out = [];
+  const nm = `${c.make} ${c.model}`, out = [], add = (n, t) => out.push({k: K(c.id + '|' + n), t: `${nm}: ${t}`});
   for (const s of c.services || []) {
     const nk = s.km ? s.lastKm + s.km : null, nd = s.mo ? addMo(s.lastDate, s.mo) : null;
     const kl = nk === null ? null : nk - (c.odo || 0), dl = days(nd);
     if ((kl !== null && kl <= 500) || (dl !== null && dl <= within)) {
       const late = (kl !== null && kl < 0) || (dl !== null && dl < 0);
-      out.push(`${nm}: ${s.n} ` + (late ? 'متأخرة' : kl !== null && kl <= 500 ? `باقي ${N(kl)} كم` : `باقي ${dl} يوم`));
+      add(s.n, `${s.n} ` + (late ? 'متأخرة' : kl !== null && kl <= 500 ? `باقي ${N(kl)} كم` : `باقي ${dl} يوم`));
     }
   }
   [['الاستمارة', c.regExp], ['التأمين', c.insExp]].forEach(([n, d]) => {
-    const x = days(d); if (d && x <= within) out.push(`${nm}: ${n} ` + (x < 0 ? `منتهية منذ ${-x} يوم` : `تنتهي بعد ${x} يوم`));
+    const x = days(d); if (d && x <= within) add(n, `${n} ` + (x < 0 ? `منتهية منذ ${-x} يوم` : `تنتهي بعد ${x} يوم`));
   });
-  (c.warranties || []).forEach(w => { const x = days(w.until); if (x !== null && x >= 0 && x <= within) out.push(`${nm}: ضمان ${w.part} ينتهي بعد ${x} يوم`); });
+  (c.warranties || []).forEach(w => { const x = days(w.until); if (x !== null && x >= 0 && x <= within) add('ضمان ' + w.part, `ضمان ${w.part} ينتهي بعد ${x} يوم`); });
   return out;
 }
 
@@ -36,7 +37,8 @@ function dueLines(c, within) {
     if (!p.email) { console.log(who, '- skipped: no email field'); continue; }
     if (!tokens.length && !mail) { console.log(who, '- skipped: no phone registered and no email alerts on'); continue; }
     const mine = cars.filter(c => p.email === ADMIN || c.ownerEmail === p.email), msgs = [];
-    const lines = mine.flatMap(c => dueLines(c, +p.alertDays || 14));
+    const dis = p.dismissed || {};
+    const lines = mine.flatMap(c => dueLines(c, +p.alertDays || 14)).filter(x => !(dis[x.k] >= today)).map(x => x.t);
     if (lines.length) msgs.push({title: '🔧 تنبيه صيانة', body: lines.slice(0, 6).join('\n') + (lines.length > 6 ? `\n+${lines.length - 6} أخرى` : '')});
     if (p.odoRemind && now.getUTCDay() === MILEAGE_DAY) {
       const own = cars.filter(c => c.ownerEmail === p.email);
