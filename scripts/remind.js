@@ -34,6 +34,7 @@ function dueLines(c, within) {
   for (const u of us.docs) {
     const p = u.data(), tokens = p.tokens || [], who = p.name || p.email;
     const mail = p.emailOn && p.alertEmail && !p.alertEmail.endsWith('@cars.family') ? p.alertEmail : null;
+    console.log(who, `- phones registered: ${tokens.length}, email alerts: ${mail ? 'on' : 'off'}`);
     if (!p.email) { console.log(who, '- skipped: no email field'); continue; }
     if (!tokens.length && !mail) { console.log(who, '- skipped: no phone registered and no email alerts on'); continue; }
     const mine = cars.filter(c => p.email === ADMIN || c.ownerEmail === p.email), msgs = [];
