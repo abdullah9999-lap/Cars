@@ -1,8 +1,8 @@
 name: reminders
 on:
   schedule:
-    - cron: '0 6 * * *'   # 9:00 صباحاً بتوقيت السعودية
-  workflow_dispatch:
+    - cron: '0 6 * * *'   # 9:00 AM Saudi time
+  workflow_dispatch:       # manual run sends a test message too
 jobs:
   send:
     runs-on: ubuntu-latest
@@ -11,8 +11,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm install firebase-admin@12
+      - run: npm install firebase-admin@12 nodemailer@6
       - run: node scripts/remind.js
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          MILEAGE_DAY: '5'   # يوم تذكير الممشى الأسبوعي: 0 الأحد ... 5 الجمعة ... 6 السبت
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          TEST: ${{ github.event_name == 'workflow_dispatch' }}
+          MILEAGE_DAY: '5'   # 0 Sun ... 5 Fri ... 6 Sat
