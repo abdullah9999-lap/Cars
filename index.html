@@ -69,6 +69,8 @@ dialog::backdrop{background:rgba(0,0,0,.65)}
 @media print{body{background:#fff;padding:0}body>*:not(#prt){display:none!important}#prt{display:block;color:#000;font-size:13px}#prt h1{font-size:22px}#prt table{width:100%;border-collapse:collapse}#prt th,#prt td{border:1px solid #bbb;padding:5px;text-align:right}#prt th{background:#eee}.ph{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.ph img{width:100%;border:1px solid #ccc}.ph figure{margin:0;break-inside:avoid}}
 .logo img{width:72%;height:72%;object-fit:contain}
 .ro .done,.ro #addlog,.ro #upodo,.ro #plan,.ro #edit,.ro .bn button{display:none}
+.pt.late i{border-color:var(--bad)}.pt.late{color:var(--bad)}
+.hide{margin-top:8px;background:var(--c2);border:0;color:var(--ink);border-radius:99px;padding:6px 12px;font-size:13px}
 </style>
 </head>
 <body>
@@ -94,6 +96,8 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const N = n => Number(n || 0).toLocaleString('en-US');
 const today = () => new Date().toISOString().slice(0, 10);
+const K = s => String(s).replace(/[\/.\[\]*~`]/g, '_');
+const same = (a, b) => !!a && !!b && (a === b || a.startsWith(b) || b.startsWith(a));
 const days = d => d ? Math.ceil((new Date(d) - new Date().setHours(0,0,0,0)) / 864e5) : null;
 const addMo = (d, m) => { const x = new Date(d); x.setMonth(x.getMonth() + m); return x.toISOString().slice(0, 10); };
 const mon = d => new Date(d).toLocaleDateString('ar-SA-u-ca-gregory-nu-latn', {month: 'long', year: 'numeric'});
@@ -170,11 +174,11 @@ function start() {
     const out = [];
     cars.filter(can).forEach(c => {
       const nm = `${c.make} ${c.model}`;
-      calc(c).forEach(s => s.lvl && out.push({nm, lvl: s.lvl, t: `${s.n}: ` + (s.kl !== null && s.kl <= 500 ? (s.kl < 0 ? `متأخرة ${N(-s.kl)} كم` : `باقي ${N(s.kl)} كم`) : (s.dl < 0 ? 'متأخرة' : `باقي ${s.dl} يوم`))}));
-      docs(c).forEach(x => x.lvl && out.push({nm, lvl: x.lvl, t: `${x.n}: ` + (x.dl < 0 ? `منتهية منذ ${-x.dl} يوم` : `تنتهي بعد ${x.dl} يوم`)}));
-      (c.warranties || []).forEach(w => { const n = days(w.until); if (n !== null && n >= 0 && n <= 30) out.push({nm, lvl: 1, t: `ضمان ${w.part} ينتهي بعد ${n} يوم`}); });
+      calc(c).forEach(s => s.lvl && out.push({nm, k: K(c.id + '|' + s.n), lvl: s.lvl, t: `${s.n}: ` + (s.kl !== null && s.kl <= 500 ? (s.kl < 0 ? `متأخرة ${N(-s.kl)} كم` : `باقي ${N(s.kl)} كم`) : (s.dl < 0 ? 'متأخرة' : `باقي ${s.dl} يوم`))}));
+      docs(c).forEach(x => x.lvl && out.push({nm, k: K(c.id + '|' + x.n), lvl: x.lvl, t: `${x.n}: ` + (x.dl < 0 ? `منتهية منذ ${-x.dl} يوم` : `تنتهي بعد ${x.dl} يوم`)}));
+      (c.warranties || []).forEach(w => { const n = days(w.until); if (n !== null && n >= 0 && n <= 30) out.push({nm, k: K(c.id + '|ضمان ' + w.part), lvl: 1, t: `ضمان ${w.part} ينتهي بعد ${n} يوم`}); });
     });
-    return out.sort((a, b) => b.lvl - a.lvl);
+    return out.filter(a => !(profile.dismissed && profile.dismissed[a.k] >= today())).sort((a, b) => b.lvl - a.lvl);
   }
 
   // ---- العرض ----
@@ -183,12 +187,17 @@ function start() {
     let h = '';
     if (tab === 'home') h = home();
     else if (tab === 'add') h = addForm();
-    else if (tab === 'alerts') h = `<h2>التنبيهات</h2>` + (al.length ? al.map(a => `<div class="al ${a.lvl > 1 ? 'bad' : ''}"><b>${esc(a.nm)}</b><br>${esc(a.t)}</div>`).join('') : '<p class="mute">كل شي تمام، ما فيه تنبيهات الحين ✅</p>') ;
+    else if (tab === 'alerts') h = `<h2>التنبيهات</h2>` + (al.length ? al.map(a => `<div class="al ${a.lvl > 1 ? 'bad' : ''}"><b>${esc(a.nm)}</b><br>${esc(a.t)}<br><button class="hide" data-k="${esc(a.k)}">✓ تم الاطلاع (إخفاء ٧ أيام)</button></div>`).join('') : '<p class="mute">كل شي تمام، ما فيه تنبيهات الحين ✅</p>') ;
     else h = `<h2>سيارات العائلة</h2>` + cars.map(c => `<div class="car ${c.id === cur ? 'sel' : ''}" data-car="${c.id}" style="border-inline-start:8px solid ${c.color || '#555'}">${lg(c)}<div><b>${esc(c.make)} ${esc(c.model)} ${esc(c.year)}</b><br><small>${esc(c.plate || '')} · ${N(c.odo)} كم · ${esc(c.ownerName)}</small></div></div>`).join('') || '<p class="mute">ما فيه سيارات بعد</p>';
     const nb = (k, ic, t) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}"><span>${ic}</span>${t}${k === 'alerts' && al.length ? `<em>${al.length}</em>` : ''}</button>`;
     $('#app').innerHTML = `<main class="${(() => { const x = cars.find(k => k.id === cur); return x && !can(x) ? 'ro' : ''; })()}">${h}</main><nav class="nav">${nb('home', '🏠', 'الرئيسية')}${isAdmin ? nb('add', '➕', 'إضافة') : ''}${nb('alerts', '🔔', 'التنبيهات')}${nb('cars', '🚗', 'السيارات')}</nav>`;
     document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { tab = b.dataset.tab; render(); });
     document.querySelectorAll('[data-car]').forEach(b => b.onclick = () => { cur = b.dataset.car; try { localStorage.setItem('cur:' + user.email, cur); } catch (e) {} tab = 'home'; render(); });
+    document.querySelectorAll('[data-k]').forEach(b => b.onclick = async () => {
+      const u = new Date(); u.setDate(u.getDate() + 7);
+      profile.dismissed = {...(profile.dismissed || {}), [b.dataset.k]: u.toISOString().slice(0, 10)};
+      await db.collection('users').doc(user.uid).set({dismissed: profile.dismissed}, {merge: true}); render();
+    });
     if (tab === 'home') bindHome(); if (tab === 'add') bindAdd();
   }
 
@@ -200,13 +209,15 @@ function start() {
     const pn = c.planNote ? `<p class="mute">📋 ${esc(c.planNote)}</p>` : '';
     const wc = (c.warranties || []).length ? `<div class="sec">الضمانات</div><div class="card">${c.warranties.map(w => { const n = days(w.until); return `<div class="svc"><div class="ic">🧾</div><div><b>${esc(w.part)}</b><span class="next ${n < 0 ? 'late' : ''}">${n < 0 ? 'انتهى الضمان' : 'باقي ' + n + ' يوم'} (${w.until})</span></div></div>`; }).join('')}</div>` : '';
     const near = kms.length ? Math.min(...kms.map(s => s.kl)) : null, dd = docs(c).map(x => x.dl);
-    const pts = kms.slice(0, 4).map(s => {
-      const p = mx > c.odo ? 8 + (s.nk - c.odo) / (mx - c.odo) * 80 : 50;
-      return `<div class="pt" style="inset-inline-start:${p}%"><i>${s.i}</i>${N(s.nk)}</div>`;
-    }).join('');
+    const tl = kms.slice(0, 4).map(s => ({...s})), top = Math.max(1, ...tl.map(s => s.kl));
+    let prev = -99;
+    tl.forEach(s => { s.p = Math.max(s.kl < 0 ? 12 : 12 + s.kl / top * 76, prev + 20); prev = s.p; });
+    const over = tl.length ? tl[tl.length - 1].p - 90 : 0;
+    if (over > 0) tl.forEach(s => s.p -= over);
+    const pts = tl.map(s => `<div class="pt ${s.kl < 0 ? 'late' : ''}" style="inset-inline-start:${s.p}%"><i>${s.i}</i>${s.kl < 0 ? 'متأخرة' : N(s.nk)}</div>`).join('');
     return `<div class="top">${lg(c)}<div><h1>${esc(c.make)} ${esc(c.model)}</h1><small>${N(c.odo)} كم · ${c.recCount || 0} سجل</small></div><button class="gear" id="edit" aria-label="تعديل السيارة">⚙️</button></div>
       ${bn}<div class="stats"><div class="stat"><b>${it.length}</b><span>خدمات مجدولة</span></div>
-      <div class="stat"><b>${near === null ? '—' : N(near) + ' كم'}</b><span>للخدمة القادمة</span></div>
+      <div class="stat"><b>${near === null ? '—' : near < 0 ? 'متأخرة ' + N(-near) + ' كم' : N(near) + ' كم'}</b><span>للخدمة القادمة</span></div>
       <div class="stat"><b>${dd.length ? Math.min(...dd) + ' يوم' : '—'}</b><span>أقرب استمارة/تأمين</span></div></div>
       <div class="card"><div class="tl"><div class="pt now" style="inset-inline-start:2%"><i></i>اليوم<br>${N(c.odo)}</div>${pts}</div></div>
       <div class="card">${it.map(s => `<div class="svc"><div class="ic">${s.i}</div><div><b>${s.n}</b>
@@ -234,6 +245,15 @@ function start() {
     const r = $('#recs'); if (!r) return;
     const s = await db.collection('cars').doc(c.id).collection('logs').orderBy('ts', 'desc').limit(30).get();
     const L = s.docs.map(x => ({id: x.id, ...x.data()}));
+    if (can(c) && L.length) {
+      let ch = false;
+      const ns = (c.services || []).map(sv => {
+        const m = L.filter(l => same(l.type, sv.n)).sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.km || 0) - (a.km || 0))[0];
+        if (m && ((m.km || 0) > (sv.lastKm || 0) || (m.date || '') > (sv.lastDate || ''))) { ch = true; return {...sv, lastKm: m.km || sv.lastKm, lastDate: m.date || sv.lastDate}; }
+        return sv;
+      });
+      if (ch) db.collection('cars').doc(c.id).update({services: ns});
+    }
     if (!$('#recs')) return;
     $('#recs').innerHTML = L.length ? L.map((l, i) => `<div class="log" data-i="${i}" role="button" tabindex="0" style="border-inline-start:5px solid ${c.color || '#555'};padding-inline-start:8px">${l.photo ? `<img src="${l.photo}" alt="فاتورة">` : ''}<div><b>${esc(l.type)} · ${N(l.cost)} ريال</b><span>${esc(l.date)} · ${N(l.km)} كم · ${esc(l.by)}</span></div></div>`).join('') : '<p class="mute">ما فيه سجلات بعد</p>';
     $('#recs').querySelectorAll('[data-i]').forEach(b => b.onclick = () => logView(c, L[b.dataset.i]));
@@ -290,7 +310,7 @@ function start() {
   const close = '<button class="btn alt" onclick="document.getElementById(\'dlg\').close()">إغلاق</button>';
 
   function logDlg(c, type) {
-    const names = [...PLAN.map(p => p.n), 'أخرى'];
+    const names = [...(c.services && c.services.length ? c.services : PLAN).map(s => s.n), 'أخرى'];
     const d = open(`<h3>تسجيل صيانة</h3><label>النوع</label><select id="lt">${names.map(n => `<option ${n === type ? 'selected' : ''}>${n}</option>`).join('')}</select>
       <div class="row"><div><label>التاريخ</label><input id="ld" type="date" value="${today()}"></div><div><label>الممشى (كم)</label><input id="lk" type="number" value="${c.odo || 0}"></div></div>
       <label>التكلفة (ريال)</label><input id="lc" type="number" inputmode="decimal"><label>ملاحظة</label><input id="ln">
@@ -307,7 +327,7 @@ function start() {
         const W = wOn && wm ? {part: g('#wn').trim() || t, months: wm, until: addMo(g('#ld'), wm), photo: wf ? await shrink(wf) : ''} : null;
         await ref.collection('logs').add({type: t, date: g('#ld'), km, cost: +g('#lc') || 0, note: g('#ln'), photo: f ? await shrink(f) : '', by: profile.name, uid: user.uid, warranty: W, ts: Date.now()});
         await ref.update({...(W ? {warranties: firebase.firestore.FieldValue.arrayUnion({part: W.part, until: W.until})} : {}), odo: Math.max(km, c.odo || 0), odoDate: today(), recCount: firebase.firestore.FieldValue.increment(1),
-          services: (c.services || []).map(s => s.n === t ? {...s, lastKm: km, lastDate: g('#ld')} : s)});
+          services: (c.services || []).map(s => same(s.n, t) ? {...s, lastKm: km, lastDate: g('#ld')} : s)});
         d.close();
       } catch (e) { d.querySelector('#er').textContent = 'تعذر الحفظ، تحقق من الاتصال وقواعد Firestore'; }
     };
