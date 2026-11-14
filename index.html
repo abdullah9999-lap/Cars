@@ -367,7 +367,8 @@ function start() {
     d.querySelector('#sv').onclick = async () => {
       profile = {...profile, name: d.querySelector('#nm').value.trim() || profile.name, emailOn: d.querySelector('#ae').checked, odoRemind: d.querySelector('#ar').checked,
         alertEmail: d.querySelector('#ai').value.trim(), alertDays: +d.querySelector('#ad').value};
-      await db.collection('users').doc(user.uid).set(profile, {merge: true}); d.close();
+      const {tokens, dismissed, ...rest} = profile;
+      await db.collection('users').doc(user.uid).set(rest, {merge: true}); d.close();
     };
   }
 
