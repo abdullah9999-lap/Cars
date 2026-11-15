@@ -1,36 +1,64 @@
 const admin = require('firebase-admin');
-const nodemailer = require('nodemailer');
 admin.initializeApp({credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT))});
 const db = admin.firestore();
-const MAX = 20 * 1024 * 1024; // Gmail limit is 25 MB
+const ADMIN = 'abdullah@cars.family', MILEAGE_DAY = +(process.env.MILEAGE_DAY ?? 5), TEST = process.env.TEST === 'true';
+const mailer = process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD
+  ? require('nodemailer').createTransport({service: 'gmail', auth: {user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD}}) : null;
+const now = new Date(Date.now() + 3 * 3600e3), today = now.toISOString().slice(0, 10);
+const days = d => d ? Math.round((Date.parse(d) - Date.parse(today)) / 864e5) : null;
+const addMo = (d, m) => { const x = new Date(d); x.setUTCMonth(x.getUTCMonth() + m); return x.toISOString().slice(0, 10); };
+const N = n => Number(n || 0).toLocaleString('en-US');
+
+const K = x => String(x).replace(/[\/.\[\]*~`]/g, '_');
+function dueLines(c, within) {
+  const nm = `${c.make} ${c.model}`, out = [], add = (n, t) => out.push({k: K(c.id + '|' + n), t: `${nm}: ${t}`});
+  for (const s of c.services || []) {
+    const nk = s.km ? s.lastKm + s.km : null, nd = s.mo ? addMo(s.lastDate, s.mo) : null;
+    const kl = nk === null ? null : nk - (c.odo || 0), dl = days(nd);
+    if ((kl !== null && kl <= 500) || (dl !== null && dl <= within)) {
+      const late = (kl !== null && kl < 0) || (dl !== null && dl < 0);
+      add(s.n, `${s.n} ` + (late ? 'متأخرة' : kl !== null && kl <= 500 ? `باقي ${N(kl)} كم` : `باقي ${dl} يوم`));
+    }
+  }
+  [['الاستمارة', c.regExp], ['التأمين', c.insExp], ['رخصة القيادة', c.licExp], ['الفحص الدوري', c.inspExp]].forEach(([n, d]) => {
+    const x = days(d); if (d && x <= within) add(n, `${n} ` + (x < 0 ? `منتهية منذ ${-x} يوم` : `تنتهي بعد ${x} يوم`));
+  });
+  (c.warranties || []).forEach(w => { const x = days(w.until); if (x !== null && x >= 0 && x <= within) add('ضمان ' + w.part, `ضمان ${w.part} ينتهي بعد ${x} يوم`); });
+  return out;
+}
 
 (async () => {
-  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) throw new Error('GMAIL_USER / GMAIL_APP_PASSWORD secrets are missing');
-  const cars = [];
-  for (const c of (await db.collection('cars').get()).docs) {
-    const subs = {};
-    for (const col of await c.ref.listCollections()) subs[col.id] = (await col.get()).docs.map(l => ({id: l.id, data: l.data()}));
-    cars.push({id: c.id, data: c.data(), ...subs});
+  const [cs, us] = await Promise.all([db.collection('cars').get(), db.collection('users').get()]);
+  const cars = cs.docs.map(d => ({id: d.id, ...d.data()}));
+  console.log(`cars: ${cars.length}, users: ${us.size}, test mode: ${TEST}, email configured: ${!!mailer}`);
+  for (const u of us.docs) {
+    const p = u.data(), tokens = p.tokens || [], who = p.name || p.email;
+    const mail = p.emailOn && p.alertEmail && !p.alertEmail.endsWith('@cars.family') ? p.alertEmail : null;
+    console.log(who, `- phones registered: ${tokens.length}, email alerts: ${mail ? 'on' : 'off'}`);
+    if (!p.email) { console.log(who, '- skipped: no email field'); continue; }
+    if (!tokens.length && !mail) { console.log(who, '- skipped: no phone registered and no email alerts on'); continue; }
+    const mine = cars.filter(c => p.email === ADMIN || c.ownerEmail === p.email), msgs = [];
+    const dis = p.dismissed || {};
+    const lines = mine.flatMap(c => dueLines(c, +p.alertDays || 14)).filter(x => !(dis[x.k] >= today)).map(x => x.t);
+    if (lines.length) msgs.push({title: '🔧 تنبيه صيانة', body: lines.slice(0, 6).join('\n') + (lines.length > 6 ? `\n+${lines.length - 6} أخرى` : '')});
+    if (p.odoRemind && now.getUTCDay() === MILEAGE_DAY) {
+      const own = cars.filter(c => c.ownerEmail === p.email);
+      if (own.length) msgs.push({title: '📍 تحديث الممشى', body: own.map(c => `${c.make} ${c.model}: آخر ممشى ${N(c.odo)} كم`).join('\n')});
+    }
+    if (!msgs.length && TEST) msgs.push({title: '✅ اختبار الإشعارات', body: 'الإشعارات تعمل بشكل صحيح'});
+    if (!msgs.length) { console.log(who, '- nothing due today'); continue; }
+    for (const m of msgs) {
+      if (tokens.length) {
+        const r = await admin.messaging().sendEachForMulticast({tokens, data: {title: m.title, body: m.body, url: './'}, webpush: {headers: {Urgency: 'high', TTL: '86400'}}});
+        const bad = tokens.filter((_, i) => !r.responses[i].success && /not-registered|invalid-argument|invalid-registration/.test(r.responses[i].error?.code || ''));
+        if (bad.length) await u.ref.update({tokens: admin.firestore.FieldValue.arrayRemove(...bad)});
+        r.responses.forEach(x => !x.success && console.log('  push error:', x.error?.code, x.error?.message));
+        console.log(who, '- push', m.title, r.successCount, 'sent,', r.failureCount, 'failed');
+      }
+      if (mail) {
+        if (!mailer) console.log(who, '- email skipped: GMAIL_USER / GMAIL_APP_PASSWORD secrets missing');
+        else { await mailer.sendMail({from: `Family Cars <${process.env.GMAIL_USER}>`, to: mail, subject: m.title, text: m.body}); console.log(who, '- email sent to', mail); }
+      }
+    }
   }
-  const users = (await db.collection('users').get()).docs.map(u => {
-    const {tokens, ...rest} = u.data();   // device tokens are not backed up; people re-enable notifications
-    return {id: u.id, data: rest};
-  });
-  const date = new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10);
-  let json = JSON.stringify({exportedAt: date, cars, users});
-  let note = 'Full backup including invoice and warranty photos.';
-  if (Buffer.byteLength(json) > MAX) {
-    cars.forEach(c => { (c.logs || []).forEach(l => { delete l.data.photo; if (l.data.warranty) delete l.data.warranty.photo; }); (c.docs || []).forEach(x => delete x.data.photo); });
-    json = JSON.stringify({exportedAt: date, cars, users, photosRemoved: true});
-    note = 'The file was too large for email, so photos were left out. Cars, records and settings are included.';
-  }
-  const nLogs = cars.reduce((n, c) => n + (c.logs || []).length, 0);
-  const to = process.env.BACKUP_TO || process.env.GMAIL_USER;
-  await nodemailer.createTransport({service: 'gmail', auth: {user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD}}).sendMail({
-    from: `Family Cars <${process.env.GMAIL_USER}>`, to,
-    subject: `Cars backup ${date}`,
-    text: `Backup of the family cars app.\n\nCars: ${cars.length}\nMaintenance records: ${nLogs}\nUsers: ${users.length}\n\n${note}\n\nKeep this email. It is the only copy outside Firebase.`,
-    attachments: [{filename: `cars-backup-${date}.json`, content: json, contentType: 'application/json'}]
-  });
-  console.log(`backup sent to ${to}: ${cars.length} cars, ${nLogs} records, ${(Buffer.byteLength(json) / 1048576).toFixed(2)} MB`);
 })().catch(e => { console.error(e); process.exit(1); });
