@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
@@ -72,6 +72,22 @@ dialog::backdrop{background:rgba(0,0,0,.65)}
 .pt.late i{border-color:var(--bad)}.pt.late{color:var(--bad)}
 .hide{margin-top:8px;background:var(--c2);border:0;color:var(--ink);border-radius:99px;padding:6px 12px;font-size:13px}
 .ck{display:flex;align-items:center;gap:10px;color:var(--ink);font-size:16px;margin:8px 0}
+.seg{display:flex;gap:4px;background:var(--c1);border-radius:99px;padding:4px;margin:14px 0}
+.seg button{flex:1;border:0;background:transparent;color:var(--mute);border-radius:99px;padding:9px 0;font-size:14px}
+.seg button.on{background:var(--acc);color:#1a1200;font-weight:700}
+#cv>[data-s]{display:none}
+#cv[data-sub=over]>[data-s=over],#cv[data-sub=fuel]>[data-s=fuel],#cv[data-sub=docs]>[data-s=docs],#cv[data-sub=recs]>[data-s=recs]{display:block;animation:fade .25s}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.qa{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}
+.qa button{background:var(--c1);border:1px solid var(--c2);border-radius:16px;padding:12px 4px;color:var(--ink);font-size:13px}.qa button span{display:block;font-size:24px}
+.ringc{display:flex;align-items:center;gap:14px;background:var(--c1);border-radius:20px;padding:14px 16px;margin:12px 0}
+.ringc svg{width:84px;height:84px;flex:none}.ringc b{display:block;font-size:18px}
+.est{color:var(--ok);font-size:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.slot{background:var(--c1);border:0;border-radius:18px;padding:12px;color:var(--ink);display:flex;flex-direction:column;align-items:center;gap:6px;min-height:150px;justify-content:center;font:inherit}
+.slot img{width:100%;height:90px;object-fit:cover;border-radius:12px}.big2{font-size:40px}.slot small{color:var(--mute)}.slot small.late{color:var(--bad)}
+.ro .qa,.ro #addf{display:none}
+@media(prefers-reduced-motion:reduce){#cv>[data-s]{animation:none!important}}
 </style>
 </head>
 <body>
@@ -124,7 +140,7 @@ const PLAN = [
 function start() {
   firebase.initializeApp(firebaseConfig);
   const auth = firebase.auth(), db = firebase.firestore();
-  let user, profile = {}, cars = [], cur = null, tab = 'home', unsub = null, pendingName = '', isAdmin = false;
+  let user, profile = {}, cars = [], cur = null, tab = 'home', unsub = null, pendingName = '', isAdmin = false, sub = 'over';
   try { cur = localStorage.getItem('cur'); } catch (e) {}
 
   auth.onAuthStateChanged(async u => {
@@ -158,6 +174,7 @@ function start() {
     $('#in').onclick = go; $('#pw').onkeydown = e => { if (e.key === 'Enter') go(); };
   }
 
+  const hist = (c, km) => { const h = c.odoHist || [], l = h[h.length - 1]; return l && l.d === today() ? [...h.slice(0, -1), {d: today(), km}] : [...h, {d: today(), km}].slice(-30); };
   const can = c => isAdmin || (!!c.ownerEmail && c.ownerEmail === (user && user.email));
   const lg = c => `<div class="logo" style="box-shadow:0 0 0 3px ${c.color || '#555'},0 0 0 4px rgba(255,255,255,.3)">${LOGOS[c.make] ? `<img src="${LOGOS[c.make]}" alt="">` : esc((c.make || '?')[0])}</div>`;
 
@@ -170,7 +187,7 @@ function start() {
       return {...s, nk, nd, kl, dl, lvl};
     });
   }
-  const docs = c => [['الاستمارة', c.regExp], ['التأمين', c.insExp]].filter(x => x[1]).map(([n, d]) => ({n, d, dl: days(d), lvl: days(d) < 0 ? 2 : days(d) <= 30 ? 1 : 0}));
+  const docs = c => [['الاستمارة', c.regExp], ['التأمين', c.insExp], ['رخصة القيادة', c.licExp], ['الفحص الدوري', c.inspExp]].filter(x => x[1]).map(([n, d]) => ({n, d, dl: days(d), lvl: days(d) < 0 ? 2 : days(d) <= 30 ? 1 : 0}));
   function alerts() {
     const out = [];
     cars.filter(can).forEach(c => {
@@ -207,7 +224,14 @@ function start() {
     if (!c) return `<div class="box"><h2>ما فيه سيارات</h2>${isAdmin ? '<p class="mute">اضغط لإضافة سيارات العائلة الخمس مع جداول الصيانة.</p><button class="btn" id="seed">إضافة سيارات العائلة</button>' : '<p class="mute">ما فيه سيارة مسجلة لك بعد.</p>'}</div>`;
     const it = calc(c), kms = it.filter(s => s.nk !== null).sort((a, b) => a.nk - b.nk), mx = kms.length ? kms[kms.length - 1].nk : 0;
     const age = -days(c.odoDate || today()), bn = `<div style="height:6px;border-radius:3px;margin-top:12px;background:${c.color || '#555'};box-shadow:0 0 0 1px rgba(255,255,255,.25)"></div>` + (age >= (profile.odoRemind ? 7 : 30) ? `<div class="bn">📍<span>آخر تحديث للممشى قبل ${age} يوم</span><button id="bnb">حدّث الآن</button></div>` : '') + (it.length ? '' : '<div class="bn"><span>ما فيه جدول صيانة لهذي السيارة</span><button id="bnp">إنشاء</button></div>');
-    const pn = c.planNote ? `<p class="mute">📋 ${esc(c.planNote)}</p>` : '';
+    const hh = (c.odoHist || []).slice(-8), rate = (() => { if (hh.length < 2) return 0; const dd2 = (Date.parse(hh[hh.length - 1].d) - Date.parse(hh[0].d)) / 864e5, k = hh[hh.length - 1].km - hh[0].km; return dd2 >= 7 && k > 0 ? k / dd2 : 0; })();
+    const eta = x => x < 14 ? Math.max(1, Math.round(x)) + ' يوم' : x < 60 ? Math.round(x / 7) + ' أسبوع' : Math.round(x / 30) + ' شهر';
+    const bad = it.filter(s => s.lvl > 1).length + docs(c).filter(x => x.lvl > 1).length, soon = it.filter(s => s.lvl === 1).length + docs(c).filter(x => x.lvl === 1).length;
+    const score = Math.max(0, 100 - bad * 25 - soon * 10), rc = score >= 80 ? '#5ed39a' : score >= 50 ? '#f4a83a' : '#ff6b6b';
+    const ring = `<div class="ringc"><svg viewBox="0 0 84 84"><circle cx="42" cy="42" r="34" fill="none" stroke="#262d36" stroke-width="9"/><circle cx="42" cy="42" r="34" fill="none" stroke="${rc}" stroke-width="9" stroke-linecap="round" stroke-dasharray="${score * 2.136} 214" transform="rotate(-90 42 42)"/><text x="42" y="49" text-anchor="middle" fill="#eef1f4" font-size="22" font-weight="700">${score}</text></svg><div><b>${score >= 80 ? 'السيارة بحالة ممتازة' : score >= 50 ? 'تحتاج انتباه' : 'تحتاج صيانة عاجلة'}</b><span class="mute">${bad} متأخر · ${soon} قريب</span></div></div>`;
+    const qa = `<div class="qa"><button id="qf"><span>⛽</span>وقود</button><button id="qs"><span>🔧</span>صيانة</button><button id="qm"><span>📍</span>الممشى</button></div>`;
+    const seg = `<div class="seg">${[['over', 'نظرة'], ['fuel', 'الوقود'], ['docs', 'الوثائق'], ['recs', 'السجلات']].map(([k, n]) => `<button data-sub="${k}" class="${sub === k ? 'on' : ''}">${n}</button>`).join('')}</div>`;
+    const pn = (c.planNote ? `<p class="mute">📋 ${esc(c.planNote)}</p>` : '') + (rate ? `<p class="mute">📈 معدل القيادة التقريبي: ${N(Math.round(rate))} كم/يوم</p>` : '<p class="mute">📈 حدّث الممشى مرتين بينهما أسبوع أو أكثر ليحسب التطبيق معدلك ويقدّر موعد الصيانة.</p>');
     const wc = (c.warranties || []).length ? `<div class="sec">الضمانات</div><div class="card">${c.warranties.map(w => { const n = days(w.until); return `<div class="svc"><div class="ic">🧾</div><div><b>${esc(w.part)}</b><span class="next ${n < 0 ? 'late' : ''}">${n < 0 ? 'انتهى الضمان' : 'باقي ' + n + ' يوم'} (${w.until})</span></div></div>`; }).join('')}</div>` : '';
     const near = kms.length ? Math.min(...kms.map(s => s.kl)) : null, dd = docs(c).map(x => x.dl);
     const tl = kms.slice(0, 4).map(s => ({...s})), top = Math.max(1, ...tl.map(s => s.kl));
@@ -217,17 +241,17 @@ function start() {
     if (over > 0) tl.forEach(s => s.p -= over);
     const pts = tl.map(s => `<div class="pt ${s.kl < 0 ? 'late' : ''}" style="inset-inline-start:${s.p}%"><i>${s.i}</i>${s.kl < 0 ? 'متأخرة' : N(s.nk)}</div>`).join('');
     return `<div class="top">${lg(c)}<div><h1>${esc(c.make)} ${esc(c.model)}</h1><small>${N(c.odo)} كم · ${c.recCount || 0} سجل</small></div><button class="gear" id="edit" aria-label="تعديل السيارة">⚙️</button></div>
-      ${bn}<div class="stats"><div class="stat"><b>${it.length}</b><span>خدمات مجدولة</span></div>
+      ${bn}${seg}<div id="cv" data-sub="${sub}"><div data-s="over">${qa}${ring}<div class="stats"><div class="stat"><b>${it.length}</b><span>خدمات مجدولة</span></div>
       <div class="stat"><b>${near === null ? '—' : near < 0 ? 'متأخرة ' + N(-near) + ' كم' : N(near) + ' كم'}</b><span>للخدمة القادمة</span></div>
-      <div class="stat"><b>${dd.length ? Math.min(...dd) + ' يوم' : '—'}</b><span>أقرب استمارة/تأمين</span></div></div>
+      <div class="stat"><b>${dd.length ? Math.min(...dd) + ' يوم' : '—'}</b><span>أقرب انتهاء وثيقة</span></div></div>
       <div class="card"><div class="tl"><div class="pt now" style="inset-inline-start:2%"><i></i>اليوم<br>${N(c.odo)}</div>${pts}</div></div>
       <div class="card">${it.map(s => `<div class="svc"><div class="ic">${s.i}</div><div><b>${s.n}</b>
         <span class="every">كل ${[s.km && N(s.km) + ' كم', s.mo && s.mo + ' شهر'].filter(Boolean).join(' / ')}</span>
-        <span class="next ${s.lvl > 1 ? 'late' : ''}">القادمة: ${[s.nk !== null && N(s.nk) + ' كم', s.nd && mon(s.nd)].filter(Boolean).join(' · ')}</span></div>
+        <span class="next ${s.lvl > 1 ? 'late' : ''}">القادمة: ${[s.nk !== null && N(s.nk) + ' كم', s.nd && mon(s.nd)].filter(Boolean).join(' · ')}</span>${s.kl > 0 && rate ? ` <span class="est">≈ بعد ${eta(s.kl / rate)}</span>` : ''}</div>
         <button class="done" data-log="${esc(s.n)}" aria-label="تسجيل ${esc(s.n)}">✓</button></div>`).join('')}</div>
       ${docs(c).length ? `<div class="sec">الوثائق</div><div class="card">${docs(c).map(x => `<div class="svc"><div class="ic">${x.n === 'التأمين' ? '🛡️' : '📄'}</div><div><b>${x.n}</b><span class="next ${x.lvl > 1 ? 'late' : ''}">${x.dl < 0 ? 'منتهية منذ ' + -x.dl + ' يوم' : 'تنتهي بعد ' + x.dl + ' يوم'} (${x.d})</span></div></div>`).join('')}</div>` : ''}
-      ${pn}${wc}<button class="btn" id="addlog">تسجيل صيانة / فاتورة</button><button class="btn alt" id="upodo">تحديث الممشى</button><button class="btn alt" id="plan">تعديل جدول الصيانة</button><button class="btn alt" id="rep">التقرير السنوي / تصدير PDF</button><button class="btn alt" id="setb">إعدادات التنبيه والحساب</button>
-      <div class="sec">آخر السجلات</div><div class="card" id="recs"><p class="mute">جاري التحميل…</p></div>`;
+      ${pn}${wc}<button class="btn alt" id="plan">تعديل جدول الصيانة</button><button class="btn alt" id="rep">التقرير السنوي / تصدير PDF</button><button class="btn alt" id="setb">إعدادات التنبيه والحساب</button></div><div data-s="fuel"><div id="fuelv"><p class="mute">جاري التحميل…</p></div></div><div data-s="docs"><div id="docv"><p class="mute">جاري التحميل…</p></div></div><div data-s="recs"><button class="btn" id="addlog">تسجيل صيانة / فاتورة</button><button class="btn alt" id="upodo">تحديث الممشى</button>
+      <div class="sec">آخر السجلات</div><div class="card" id="recs"><p class="mute">جاري التحميل…</p></div></div></div>`;
   }
 
   async function bindHome() {
@@ -243,6 +267,15 @@ function start() {
     $('#bnb') && ($('#bnb').onclick = () => odoDlg(c));
     $('#bnp') && ($('#bnp').onclick = () => planDlg(c));
     document.querySelectorAll('[data-log]').forEach(b => b.onclick = () => logDlg(c, b.dataset.log));
+    $('#qf') && ($('#qf').onclick = () => fuelDlg(c));
+    $('#qs') && ($('#qs').onclick = () => logDlg(c, 'أخرى'));
+    $('#qm') && ($('#qm').onclick = () => odoDlg(c));
+    document.querySelectorAll('.seg button').forEach(b => b.onclick = () => {
+      sub = b.dataset.sub; $('#cv').dataset.sub = sub;
+      document.querySelectorAll('.seg button').forEach(x => x.classList.toggle('on', x === b));
+      if (sub === 'fuel') loadFuel(c); if (sub === 'docs') loadDocs(c);
+    });
+    if (sub === 'fuel') loadFuel(c); if (sub === 'docs') loadDocs(c);
     const r = $('#recs'); if (!r) return;
     const s = await db.collection('cars').doc(c.id).collection('logs').orderBy('ts', 'desc').limit(30).get();
     const L = s.docs.map(x => ({id: x.id, ...x.data()}));
@@ -330,7 +363,7 @@ function start() {
       const od = +v('#od') || 0;
       const ref = await db.collection('cars').add({make: brand, model: v('#md'), year: v('#yr'), engine: v('#en'), odo: od, vin: v('#vn'), plate: v('#pl'),
         regExp: v('#rg'), insExp: v('#is'), services: PLAN.map(s => ({...s, lastKm: od, lastDate: today()})), recCount: 0,
-        odoDate: today(), color: v('#cl'), ownerEmail: v('#ow') + '@cars.family', ownerName: PEOPLE[v('#ow')], created: Date.now()});
+        odoDate: today(), odoHist: [{d: today(), km: od}], color: v('#cl'), ownerEmail: v('#ow') + '@cars.family', ownerName: PEOPLE[v('#ow')], created: Date.now()});
       cur = ref.id; brand = ''; tab = 'home'; render();
     };
   }
@@ -358,7 +391,7 @@ function start() {
         const wOn = d.querySelector('#lw').checked, wf = d.querySelector('#wp').files[0], wm = +g('#wm') || 0;
         const W = wOn && wm ? {part: g('#wn').trim() || t, months: wm, until: addMo(g('#ld'), wm), photo: wf ? await shrink(wf) : ''} : null;
         await ref.collection('logs').add({type: t, types: sel, date: g('#ld'), km, cost: +g('#lc') || 0, note: g('#ln'), photo: f ? await shrink(f) : '', by: profile.name, uid: user.uid, warranty: W, ts: Date.now()});
-        await ref.update({...(W ? {warranties: firebase.firestore.FieldValue.arrayUnion({part: W.part, until: W.until})} : {}), odo: Math.max(km, c.odo || 0), odoDate: today(), recCount: firebase.firestore.FieldValue.increment(1),
+        await ref.update({...(W ? {warranties: firebase.firestore.FieldValue.arrayUnion({part: W.part, until: W.until})} : {}), odo: Math.max(km, c.odo || 0), odoDate: today(), odoHist: hist(c, Math.max(km, c.odo || 0)), recCount: firebase.firestore.FieldValue.increment(1),
           services: (c.services || []).map(s => sel.some(x => same(s.n, x)) ? {...s, lastKm: km, lastDate: g('#ld')} : s)});
         d.close();
       } catch (e) { d.querySelector('#er').textContent = 'تعذر الحفظ، تحقق من الاتصال وقواعد Firestore'; }
@@ -371,7 +404,7 @@ function start() {
       <div><label>انتهاء الاستمارة</label><input id="rg" type="date" value="${c.regExp || ''}"></div><div><label>انتهاء التأمين</label><input id="is" type="date" value="${c.insExp || ''}"></div></div>
       <button class="btn" id="sv">حفظ</button>${isAdmin ? '<button class="btn del" id="dc">حذف السيارة</button>' : ''}${close}`);
     const g = i => d.querySelector(i).value, ref = db.collection('cars').doc(c.id);
-    d.querySelector('#sv').onclick = async () => { await ref.update({odo: +g('#od') || 0, odoDate: today(), plate: g('#pl'), vin: g('#vn'), regExp: g('#rg'), insExp: g('#is')}); d.close(); };
+    d.querySelector('#sv').onclick = async () => { await ref.update({odo: +g('#od') || 0, odoDate: today(), odoHist: hist(c, +g('#od') || 0), plate: g('#pl'), vin: g('#vn'), regExp: g('#rg'), insExp: g('#is')}); d.close(); };
     const dc = d.querySelector('#dc'); if (dc) dc.onclick = async () => { if (confirm('حذف السيارة نهائياً؟')) { await ref.delete(); d.close(); } };
   }
 
@@ -388,14 +421,124 @@ function start() {
     } catch (e) { say('تعذر التفعيل: ' + (e.code || e.message)); }
   }
 
+  const SLOTS = [['reg', 'الاستمارة', '📄', 'regExp'], ['ins', 'التأمين', '🛡️', 'insExp'], ['lic', 'رخصة القيادة', '🪪', 'licExp'], ['insp', 'الفحص الدوري', '🔍', 'inspExp'], ['oth', 'وثيقة أخرى', '🗂️', null]];
+
+  async function loadFuel(c) {
+    const box = $('#fuelv'); if (!box) return;
+    const s = await db.collection('cars').doc(c.id).collection('fuel').orderBy('km').get();
+    const F = s.docs.map(x => ({id: x.id, ...x.data()})), res = [];
+    let base = null, acc = 0, accC = 0;
+    F.forEach(e => {
+      if (base !== null) {
+        acc += e.liters || 0; accC += e.cost || 0;
+        if (e.full) { const dist = e.km - base; if (dist > 0) res.push({v: acc / dist * 100, cpk: accC / dist}); base = e.km; acc = 0; accC = 0; }
+      } else if (e.full) { base = e.km; acc = 0; accC = 0; }
+    });
+    const avg = res.length ? res.reduce((a, r) => a + r.v, 0) / res.length : null, cpk = res.length ? res.reduce((a, r) => a + r.cpk, 0) / res.length : null;
+    const mo = today().slice(0, 7), spent = F.filter(e => (e.date || '').startsWith(mo)).reduce((a, e) => a + (e.cost || 0), 0), mx = Math.max(1, ...res.slice(-8).map(r => r.v));
+    if (!$('#fuelv')) return;
+    box.innerHTML = `<div class="stats"><div class="stat"><b>${avg ? avg.toFixed(1) : '—'}</b><span>لتر / 100 كم</span></div><div class="stat"><b>${cpk ? cpk.toFixed(2) : '—'}</b><span>ريال / كم</span></div><div class="stat"><b>${N(Math.round(spent))}</b><span>وقود هذا الشهر</span></div></div>
+      ${res.length ? `<div class="sec">استهلاك آخر التعبئات (لتر/100 كم)</div><div class="mb">${res.slice(-8).map(r => `<div><i style="height:${r.v / mx * 70}px"></i><span>${r.v.toFixed(1)}</span></div>`).join('')}</div>` : '<p class="mute">سجّل تعبئتين بخزان ممتلئ على الأقل ليحسب التطبيق الاستهلاك.</p>'}
+      <button class="btn" id="addf">⛽ تسجيل تعبئة</button><div class="sec">آخر التعبئات</div>
+      <div class="card">${F.slice().reverse().slice(0, 20).map(e => `<div class="svc"><div class="ic">⛽</div><div><b>${N(e.liters)} لتر · ${N(e.cost)} ريال</b><span class="next">${esc(e.date)} · ${N(e.km)} كم${e.full ? '' : ' · غير ممتلئ'} · ${esc(e.by)}</span></div>${can(c) ? `<button class="done" data-fx="${e.id}" aria-label="حذف">🗑️</button>` : ''}</div>`).join('') || '<p class="mute">ما فيه تعبئات</p>'}</div>`;
+    if ($('#addf')) $('#addf').onclick = () => fuelDlg(c);
+    box.querySelectorAll('[data-fx]').forEach(b => b.onclick = async () => { if (confirm('حذف التعبئة؟')) { await db.collection('cars').doc(c.id).collection('fuel').doc(b.dataset.fx).delete(); loadFuel(c); } });
+  }
+
+  function fuelDlg(c) {
+    const d = open(`<h3>تسجيل تعبئة وقود</h3><div class="row"><div><label>التاريخ</label><input id="fd" type="date" value="${today()}"></div><div><label>الممشى (كم)</label><input id="fk" type="number" inputmode="numeric" value="${c.odo || ''}"></div>
+      <div><label>اللترات</label><input id="fl" type="number" inputmode="decimal"></div><div><label>المبلغ (ريال)</label><input id="fc" type="number" inputmode="decimal"></div></div>
+      <label class="ck"><input type="checkbox" id="ff" checked> عبّيت الخزان بالكامل</label><div class="err" id="er"></div><button class="btn" id="sv">حفظ</button>${close}`);
+    d.querySelector('#sv').onclick = async () => {
+      const g = i => d.querySelector(i).value, km = +g('#fk') || 0, liters = +g('#fl') || 0;
+      if (!km || !liters) return d.querySelector('#er').textContent = 'اكتب الممشى واللترات';
+      try {
+        const ref = db.collection('cars').doc(c.id), od = Math.max(km, c.odo || 0);
+        await ref.collection('fuel').add({date: g('#fd'), km, liters, cost: +g('#fc') || 0, full: d.querySelector('#ff').checked, by: profile.name, uid: user.uid, ts: Date.now()});
+        await ref.update({odo: od, odoDate: today(), odoHist: hist(c, od)});
+        d.close();
+      } catch (e) { d.querySelector('#er').textContent = 'تعذر الحفظ'; }
+    };
+  }
+
+  async function loadDocs(c) {
+    const box = $('#docv'); if (!box) return;
+    const s = await db.collection('cars').doc(c.id).collection('docs').get(), M = {};
+    s.docs.forEach(x => M[x.id] = x.data());
+    if (!$('#docv')) return;
+    box.innerHTML = `<div class="grid2">${SLOTS.map(([k, n, ic]) => {
+      const x = M[k], dl = x && x.expiry ? days(x.expiry) : null;
+      return `<button class="slot" data-d="${k}">${x && x.photo ? `<img src="${x.photo}" alt="">` : `<span class="big2">${ic}</span>`}<b>${n}</b><small class="${dl !== null && dl < 0 ? 'late' : ''}">${x ? (dl === null ? 'مضافة' : dl < 0 ? 'منتهية منذ ' + -dl + ' يوم' : 'باقي ' + dl + ' يوم') : 'اضغط للإضافة'}</small></button>`;
+    }).join('')}</div>`;
+    box.querySelectorAll('[data-d]').forEach(b => b.onclick = () => docDlg(c, SLOTS.find(z => z[0] === b.dataset.d), M[b.dataset.d]));
+  }
+
+  function docDlg(c, sl, x) {
+    const [k, n, ic, fld] = sl, ro = !can(c);
+    const photo = x && x.photo ? `<img class="big" src="${x.photo}" alt="${n}">` : '<p class="mute">ما فيه صورة</p>';
+    const d = open(ro ? `<h3>${ic} ${n}</h3>${photo}<p class="mute">تنتهي: ${esc((x && x.expiry) || '—')}</p>${close}`
+      : `<h3>${ic} ${n}</h3>${photo}<label>تاريخ الانتهاء</label><input id="de" type="date" value="${esc((x && x.expiry) || '')}">
+      <label>${x && x.photo ? 'استبدال الصورة' : 'إضافة صورة'} (من الألبوم أو الكاميرا)</label><input id="dp" type="file" accept="image/*">
+      ${x && x.photo ? '<label class="ck"><input type="checkbox" id="dr"> حذف الصورة</label>' : ''}
+      <div class="err" id="er"></div><button class="btn" id="sv">حفظ</button>${close}`);
+    if (ro) return;
+    d.querySelector('#sv').onclick = async () => {
+      try {
+        const ex = d.querySelector('#de').value, nf = d.querySelector('#dp').files[0], dr = d.querySelector('#dr');
+        const up = {expiry: ex, by: profile.name, ts: Date.now()};
+        if (nf) up.photo = await shrink(nf, 1400, .7); else if (dr && dr.checked) up.photo = '';
+        const ref = db.collection('cars').doc(c.id);
+        await ref.collection('docs').doc(k).set(up, {merge: true});
+        if (fld && ex) await ref.update({[fld]: ex});
+        d.close(); loadDocs(c);
+      } catch (e) { d.querySelector('#er').textContent = 'تعذر الحفظ'; }
+    };
+  }
+
+  function backupDlg() {
+    const d = open(`<h3>النسخ الاحتياطي</h3><p class="mute">يحفظ كل السيارات والسجلات والصور في ملف على جوالك. احتفظ به في الملفات أو أرسله لنفسك.</p>
+      <button class="btn" id="dl2">تنزيل نسخة احتياطية الآن</button>
+      <h4>استعادة من ملف</h4><p class="mute">اختر ملف النسخة (من جوالك أو من إيميل النسخة الشهرية). يرجع السيارات والسجلات ولا يحذف شي موجود.</p>
+      <input id="rf" type="file" accept=".json,application/json"><div class="err" id="er"></div><button class="btn alt" id="rs2">استعادة</button>${close}`);
+    const say = s => d.querySelector('#er').textContent = s;
+    d.querySelector('#dl2').onclick = async () => {
+      try {
+        say('جاري التجهيز…');
+        const cs = [];
+        for (const c of (await db.collection('cars').get()).docs)
+          cs.push({id: c.id, data: c.data(), ...Object.fromEntries(await Promise.all(['logs', 'fuel', 'docs'].map(async n => [n, (await c.ref.collection(n).get()).docs.map(l => ({id: l.id, data: l.data()}))])))});
+        const name = `cars-backup-${today()}.json`, file = new File([JSON.stringify({exportedAt: today(), cars: cs})], name, {type: 'application/json'});
+        if (navigator.canShare && navigator.canShare({files: [file]})) await navigator.share({files: [file], title: name});
+        else { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name; a.click(); }
+        say('تم ✅');
+      } catch (e) { say(e.name === 'AbortError' ? '' : 'تعذر إنشاء النسخة'); }
+    };
+    d.querySelector('#rs2').onclick = async () => {
+      try {
+        const f = d.querySelector('#rf').files[0]; if (!f) return say('اختر ملف النسخة أول');
+        const j = JSON.parse(await f.text());
+        if (!Array.isArray(j.cars)) return say('الملف غير صحيح');
+        if (!confirm(`استعادة ${j.cars.length} سيارات؟ أي سيارة أو سجل بنفس الرقم ينكتب فوقه.`)) return;
+        say('جاري الاستعادة…');
+        for (const c of j.cars) {
+          const ref = db.collection('cars').doc(c.id);
+          await ref.set(c.data);
+          for (const n of ['logs', 'fuel', 'docs']) for (const l of c[n] || []) await ref.collection(n).doc(l.id).set(l.data);
+        }
+        say('تمت الاستعادة ✅');
+      } catch (e) { say('تعذرت الاستعادة: الملف تالف أو ما عندك صلاحية'); }
+    };
+  }
+
   function settings() {
     const d = open(`<h3>الإعدادات</h3><label>الاسم</label><input id="nm" value="${esc(profile.name)}">
       <label style="display:flex;align-items:center;gap:10px;color:var(--ink);font-size:16px"><input type="checkbox" id="ae" ${profile.emailOn ? 'checked' : ''}> تفعيل التنبيه عن طريق الإيميل</label>
       <label>إيميل التنبيه</label><input id="ai" type="email" dir="ltr" value="${esc(profile.alertEmail || '')}" placeholder="name@gmail.com">
       <label>نبّهني قبل (أيام)</label><select id="ad">${[7, 14, 30].map(n => `<option ${+profile.alertDays === n ? 'selected' : ''}>${n}</option>`).join('')}</select>
-      <label style="display:flex;align-items:center;gap:10px;color:var(--ink);font-size:16px"><input type="checkbox" id="ar" ${profile.odoRemind ? 'checked' : ''}> تذكير أسبوعي بتحديث الممشى</label><button class="btn alt" id="pushb" type="button">🔔 تفعيل إشعارات الجوال</button><div class="mute" id="pm"></div><button class="btn alt" id="lo" type="button">تسجيل خروج</button><button class="btn" id="sv">حفظ</button>${close}`);
+      <label style="display:flex;align-items:center;gap:10px;color:var(--ink);font-size:16px"><input type="checkbox" id="ar" ${profile.odoRemind ? 'checked' : ''}> تذكير أسبوعي بتحديث الممشى</label><button class="btn alt" id="pushb" type="button">🔔 تفعيل إشعارات الجوال</button><div class="mute" id="pm"></div>${isAdmin ? '<button class="btn alt" id="bk" type="button">💾 نسخة احتياطية / استعادة</button>' : ''}<button class="btn alt" id="lo" type="button">تسجيل خروج</button><button class="btn" id="sv">حفظ</button>${close}`);
     d.querySelector('#pushb').onclick = () => enablePush(d);
     d.querySelector('#lo').onclick = () => { d.close(); auth.signOut(); };
+    if (d.querySelector('#bk')) d.querySelector('#bk').onclick = backupDlg;
     d.querySelector('#sv').onclick = async () => {
       profile = {...profile, name: d.querySelector('#nm').value.trim() || profile.name, emailOn: d.querySelector('#ae').checked, odoRemind: d.querySelector('#ar').checked,
         alertEmail: d.querySelector('#ai').value.trim(), alertDays: +d.querySelector('#ad').value};
@@ -449,7 +592,7 @@ function start() {
 
   function odoDlg(c) {
     const d = open(`<h3>تحديث الممشى</h3><p class="mute">آخر ممشى مسجل: ${N(c.odo)} كم</p><label>الممشى الحالي (كم)</label><input id="od" type="number" inputmode="numeric" value="${c.odo || 0}"><button class="btn" id="sv">حفظ</button>${close}`);
-    d.querySelector('#sv').onclick = async () => { await db.collection('cars').doc(c.id).update({odo: +d.querySelector('#od').value || 0, odoDate: today()}); d.close(); };
+    d.querySelector('#sv').onclick = async () => { { const v = +d.querySelector('#od').value || 0; await db.collection('cars').doc(c.id).update({odo: v, odoDate: today(), odoHist: hist(c, v)}); } d.close(); };
   }
 
   function planDlg(c) {
@@ -479,14 +622,14 @@ function start() {
   }
 
   // ضغط الصورة داخل المتصفح لتخزينها في Firestore
-  function shrink(file) {
+  function shrink(file, max = 900, q = .6) {
     return new Promise((res, rej) => {
       const img = new Image();
       img.onload = () => {
-        const k = Math.min(1, 900 / Math.max(img.width, img.height)), cv = document.createElement('canvas');
+        const k = Math.min(1, max / Math.max(img.width, img.height)), cv = document.createElement('canvas');
         cv.width = img.width * k; cv.height = img.height * k;
         cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
-        res(cv.toDataURL('image/jpeg', .6));
+        res(cv.toDataURL('image/jpeg', q));
       };
       img.onerror = rej; img.src = URL.createObjectURL(file);
     });
