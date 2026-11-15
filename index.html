@@ -1,4 +1,4 @@
-<!<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
@@ -136,6 +136,80 @@ const SEED = [
 const PLAN = [
   {n:'تغيير الزيت', i:'🛢️', km:8000, mo:12}, {n:'تدوير الإطارات', i:'🛞', km:12000},
   {n:'فلتر الهواء', i:'🌬️', km:24000}, {n:'فلتر المكيف', i:'❄️', mo:12}, {n:'زيت الفرامل', i:'🛑', mo:24}];
+
+function buildPdf(jpegs, w, h) {
+  const enc = new TextEncoder(), chunks = [], offs = []; let len = 0;
+  const push = x => { const b = typeof x === 'string' ? enc.encode(x) : x; chunks.push(b); len += b.length; };
+  const obj = (n, body) => { offs[n] = len; push(`${n} 0 obj\n`); push(body); push('\nendobj\n'); };
+  const N = jpegs.length, total = 3 + 3 * N;
+  push('%PDF-1.4\n');
+  obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
+  obj(2, `<< /Type /Pages /Kids [${jpegs.map((_, i) => `${3 + 3 * i} 0 R`).join(' ')}] /Count ${N} >>`);
+  jpegs.forEach((j, i) => {
+    const p = 3 + 3 * i, c = p + 1, im = p + 2, cs = 'q 595 0 0 842 0 0 cm /Im0 Do Q';
+    obj(p, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im0 ${im} 0 R >> >> /Contents ${c} 0 R >>`);
+    obj(c, `<< /Length ${cs.length} >>\nstream\n${cs}\nendstream`);
+    offs[im] = len;
+    push(`${im} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${w} /Height ${h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${j.length} >>\nstream\n`);
+    push(j); push('\nendstream\nendobj\n');
+  });
+  const xr = len;
+  push(`xref\n0 ${total}\n0000000000 65535 f \n`);
+  for (let n = 1; n < total; n++) push(String(offs[n]).padStart(10, '0') + ' 00000 n \n');
+  push(`trailer\n<< /Size ${total} /Root 1 0 R >>\nstartxref\n${xr}\n%%EOF`);
+  return new Blob(chunks, {type: 'application/pdf'});
+}
+
+async function reportPdf(data, env) {
+  const W = 1240, H = 1754, M = 70, TW = W - 2 * M, R = W - M, F = '"IBM Plex Sans Arabic", Tahoma, Arial, sans-serif';
+  const jpegs = []; let cv, g, y;
+  const newPage = () => { cv = env.mk(W, H); g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); g.direction = 'rtl'; g.textAlign = 'right'; g.textBaseline = 'top'; y = M; };
+  const endPage = () => { g.textAlign = 'center'; g.font = `22px ${F}`; g.fillStyle = '#777'; g.fillText(String(jpegs.length + 1), W / 2, H - 55); jpegs.push(env.jpeg(cv)); cv.width = 1; cv.height = 1; };
+  const T = (s, x, yy, size, bold, color) => { g.font = `${bold ? '700 ' : ''}${size}px ${F}`; g.fillStyle = color || '#111'; g.textAlign = 'right'; g.fillText(String(s), x, yy); };
+  const wrap = (s, maxW, size, max) => {
+    g.font = `${size}px ${F}`;
+    const words = String(s == null ? '' : s).split(/\s+/).filter(Boolean), out = []; let line = '';
+    for (const w of words) { const t = line ? line + ' ' + w : w; if (!line || g.measureText(t).width <= maxW) line = t; else { out.push(line); line = w; } }
+    if (line) out.push(line);
+    if (out.length > max) { out.length = max; out[max - 1] += '…'; }
+    return out.length ? out : [''];
+  };
+  const n = data.cols.length, fixed = n === 5 ? [150, 380, 130, 130] : [150, 220, 300, 120, 120];
+  const widths = [...fixed, TW - fixed.reduce((a, b) => a + b, 0)];
+  const head = () => {
+    g.fillStyle = '#eceff1'; g.fillRect(M, y, TW, 54);
+    let x = R; data.cols.forEach((c, i) => { T(c, x - 12, y + 12, 25, true); x -= widths[i]; });
+    y += 54;
+  };
+  newPage();
+  T(data.title, R, y, 46, true); y += 70;
+  data.lines.forEach(l => { T(l, R, y, 27, false, '#444'); y += 40; });
+  y += 18; head();
+  data.rows.forEach((row, ri) => {
+    const cells = row.map((c, i) => wrap(c, widths[i] - 24, 24, 3)), rh = Math.max(...cells.map(c => c.length)) * 34 + 20;
+    if (y + rh > H - M - 50) { endPage(); newPage(); head(); }
+    if (ri % 2) { g.fillStyle = '#f7f9fa'; g.fillRect(M, y, TW, rh); }
+    g.fillStyle = '#dde3e6'; g.fillRect(M, y + rh - 1, TW, 1);
+    let x = R; cells.forEach((lines, i) => { lines.forEach((ln, k) => T(ln, x - 12, y + 10 + k * 34, 24, false)); x -= widths[i]; });
+    y += rh;
+  });
+  if (!data.rows.length) T('ما فيه سجلات', R, y + 20, 26, false, '#666');
+  if (data.photos.length) {
+    endPage(); newPage();
+    T('صور الفواتير', R, y, 40, true); y += 70;
+    const cw = (TW - 30) / 2; let col = 0, rowMax = 0;
+    for (const ph of data.photos) {
+      const im = await env.img(ph.src); if (!im) continue;
+      if (col === 0 && y + 640 > H - M) { endPage(); newPage(); }
+      const s = Math.min(cw / im.width, 560 / im.height), w = im.width * s, h = im.height * s, right = R - col * (cw + 30);
+      g.drawImage(im, right - w, y, w, h); T(ph.cap, right, y + h + 10, 22, false, '#444');
+      rowMax = Math.max(rowMax, h + 50);
+      if (col === 1) { y += rowMax + 20; rowMax = 0; col = 0; } else col = 1;
+    }
+  }
+  endPage();
+  return buildPdf(jpegs, W, H);
+}
 
 function start() {
   firebase.initializeApp(firebaseConfig);
@@ -575,16 +649,33 @@ function start() {
         <button class="btn" id="pdf">تصدير PDF</button>${close}`;
       d.querySelector('#rs').onchange = e => { scope = e.target.value; draw(); };
       d.querySelector('#ry').onchange = e => { yr = e.target.value; draw(); };
-      d.querySelector('#pdf').onclick = () => {
-        const photos = d.querySelector('#rp').checked, car = scope === 'all' ? null : cars.find(k => k.id === scope);
-        $('#prt').innerHTML = `<h1>تقرير الصيانة ${yr === 'all' ? '' : yr}</h1>
-          <p>${car ? `${esc(car.make)} ${esc(car.model)} ${esc(car.year)} · لوحة ${esc(car.plate)} · VIN ${esc(car.vin)} · الممشى ${N(car.odo)} كم` : 'كل سيارات العائلة'}</p>
-          <p>الإجمالي: <b>${N(tot)}</b> ريال · عدد السجلات: ${L.length}${driven !== null ? ` · المسافة: ${N(driven)} كم` : ''}</p>
-          <table><tr><th>التاريخ</th>${car ? '' : '<th>السيارة</th>'}<th>النوع</th><th>الممشى</th><th>التكلفة</th><th>ملاحظة</th></tr>
-          ${L.map(l => `<tr><td>${esc(l.date)}</td>${car ? '' : `<td>${esc(nm(l.car))}</td>`}<td>${esc(l.type)}</td><td>${N(l.km)}</td><td>${N(l.cost)}</td><td>${esc(l.note)}</td></tr>`).join('')}</table>
-          ${photos ? `<div class="ph">${L.filter(l => l.photo).map(l => `<figure><img src="${l.photo}" alt=""><figcaption>${esc(l.date)} · ${esc(l.type)}</figcaption></figure>`).join('')}</div>` : ''}`;
-        window.onafterprint = () => { $('#prt').innerHTML = ''; };
-        d.close(); setTimeout(() => window.print(), 300);
+      d.querySelector('#pdf').onclick = async e => {
+        const btn = e.currentTarget, photos = d.querySelector('#rp').checked, car = scope === 'all' ? null : cars.find(k => k.id === scope);
+        btn.disabled = true; btn.textContent = 'جاري تجهيز الملف…';
+        try {
+          const data = {
+            title: `تقرير الصيانة ${yr === 'all' ? '' : yr}`.trim(),
+            lines: [car ? `${car.make} ${car.model} ${car.year} · لوحة ${car.plate || '—'} · الممشى ${N(car.odo)} كم` : 'كل سيارات العائلة', car && car.vin ? `VIN: ${car.vin}` : '',
+              `الإجمالي: ${N(tot)} ريال · عدد السجلات: ${L.length}${driven !== null ? ` · المسافة: ${N(driven)} كم` : ''}`].filter(Boolean),
+            cols: car ? ['التاريخ', 'الخدمة', 'الممشى', 'التكلفة', 'ملاحظة'] : ['التاريخ', 'السيارة', 'الخدمة', 'الممشى', 'التكلفة', 'ملاحظة'],
+            rows: L.map(l => car ? [l.date, l.type, N(l.km), N(l.cost), l.note || ''] : [l.date, nm(l.car), l.type, N(l.km), N(l.cost), l.note || '']),
+            photos: photos ? L.filter(l => l.photo).map(l => ({src: l.photo, cap: `${l.date} · ${l.type}`})) : []
+          };
+          try { await document.fonts.load('26px "IBM Plex Sans Arabic"'); } catch (x) {}
+          const blob = await reportPdf(data, {
+            mk: (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; },
+            img: src => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = src; }),
+            jpeg: c => Uint8Array.from(atob(c.toDataURL('image/jpeg', .85).split(',')[1]), ch => ch.charCodeAt(0))
+          });
+          const name = `cars-report-${today()}.pdf`, file = new File([blob], name, {type: 'application/pdf'});
+          btn.disabled = false; btn.textContent = '📤 الملف جاهز: اضغط للفتح / المشاركة';
+          btn.onclick = async () => {
+            try {
+              if (navigator.canShare && navigator.canShare({files: [file]})) await navigator.share({files: [file], title: name});
+              else { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); }
+            } catch (x) {}
+          };
+        } catch (x) { btn.disabled = false; btn.textContent = 'تصدير PDF'; alert('تعذر إنشاء الملف، حاول مرة ثانية'); }
       };
     };
     draw();
