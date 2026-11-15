@@ -20,7 +20,7 @@ function dueLines(c, within) {
       add(s.n, `${s.n} ` + (late ? 'متأخرة' : kl !== null && kl <= 500 ? `باقي ${N(kl)} كم` : `باقي ${dl} يوم`));
     }
   }
-  [['الاستمارة', c.regExp], ['التأمين', c.insExp]].forEach(([n, d]) => {
+  [['الاستمارة', c.regExp], ['التأمين', c.insExp], ['رخصة القيادة', c.licExp], ['الفحص الدوري', c.inspExp]].forEach(([n, d]) => {
     const x = days(d); if (d && x <= within) add(n, `${n} ` + (x < 0 ? `منتهية منذ ${-x} يوم` : `تنتهي بعد ${x} يوم`));
   });
   (c.warranties || []).forEach(w => { const x = days(w.until); if (x !== null && x >= 0 && x <= within) add('ضمان ' + w.part, `ضمان ${w.part} ينتهي بعد ${x} يوم`); });
